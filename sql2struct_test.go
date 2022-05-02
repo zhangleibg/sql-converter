@@ -7,14 +7,58 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-const testCreateSQL = "CREATE TABLE IF NOT EXISTS `v_test_table` (`id` BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键, 无实际意义',`student_name` VARCHAR(128) NOT NULL COMMENT '学生姓名', `created_at` TIMESTAMP NOT NULL CURRENT_STAMP ON UPDATE CURRENT_STAMP) ENGINE=InnoDB COMMENT='测试表'"
-
 func TestExtractTableStruct(t *testing.T) {
-	res, err := extractTableStruct(testCreateSQL)
-	if err != nil {
-		t.Fatal(err)
+	inputSQLs := []string{
+		"CREATE TABLE IF NOT EXISTS `v_test_table` (`id` BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键, 无实际意义',`student_name` VARCHAR(128) NOT NULL COMMENT '学生姓名', `created_at` TIMESTAMP NOT NULL CURRENT_STAMP ON UPDATE CURRENT_STAMP) ENGINE=InnoDB COMMENT='测试表'",
+		"CREATE TABLE IF NOT EXISTS `v_test_table` (`id` BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键, 无实际意义',`student_name` VARCHAR(128) NOT NULL COMMENT '学生姓名', PRIMARY KEY `id`, KEY `idx_name` (`student_name`)) ENGINE=InnoDB COMMENT='测试表'",
 	}
-	fmt.Println(res)
+	expecteds := []*TableStruct{
+		{
+			TableName: "v_test_table",
+			Fields: []*FieldInfo{
+				{
+					FieldName:    "id",
+					FieldType:    "BIGINT",
+					FieldComment: "主键, 无实际意义",
+				},
+				{
+					FieldName:    "student_name",
+					FieldType:    "VARCHAR",
+					FieldComment: "学生姓名",
+				},
+				{
+					FieldName:    "created_at",
+					FieldType:    "TIMESTAMP",
+					FieldComment: "",
+				},
+			},
+		},
+		{
+			TableName: "v_test_table",
+			Fields: []*FieldInfo{
+				{
+					FieldName:    "id",
+					FieldType:    "BIGINT",
+					FieldComment: "主键, 无实际意义",
+				},
+				{
+					FieldName:    "student_name",
+					FieldType:    "VARCHAR",
+					FieldComment: "学生姓名",
+				},
+			},
+		},
+	}
+
+	for idx, sql := range inputSQLs {
+		t.Run(fmt.Sprintf("Case %d", idx), func(t *testing.T) {
+			actual, err := extractTableStruct(sql)
+			if err != nil {
+				t.Fatal(err)
+			}
+			assert.Equal(t, expecteds[idx], actual)
+		})
+	}
 }
 
 func TestDefaultConvertFunc(t *testing.T) {
@@ -98,9 +142,7 @@ func TestFormatOne(t *testing.T) {
 		},
 	}
 	expected :=
-		`package main
-
-type TestTable struct {
+		`type TestTable struct {
 	Field1 string 测试
 	Field2 int64  测试int64
 }`

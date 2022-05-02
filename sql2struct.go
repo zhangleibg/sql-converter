@@ -193,6 +193,7 @@ func (parser *CreateTableSQLParser) parseSQL() error {
 
 func (parser *CreateTableSQLParser) format() []byte {
 	var res []string
+	res = append(res, "package main\n")
 	for _, ss := range parser.structs {
 		res = append(res, parser.formatOne(ss))
 	}
@@ -218,10 +219,7 @@ func (parser *CreateTableSQLParser) formatOne(ss *SS) string {
 	}
 
 	var res []string
-	res = append(res,
-		"package main\n",
-		fmt.Sprintf("type %s struct {", ss.StructName),
-	)
+	res = append(res, fmt.Sprintf("type %s struct {", ss.StructName))
 	for j := 0; j < len(reverseTmpWithPadding[0]); j++ {
 		res = append(res, fmt.Sprintf("\t%s %s %s", reverseTmpWithPadding[0][j], reverseTmpWithPadding[1][j], tmp[j][2]))
 	}
@@ -344,7 +342,7 @@ func extractTableStruct(sql string) (*TableStruct, error) {
 			isCurrSep := isSep(currChar)
 			groupFlag := getGroupFlag(currChar)
 
-			if isPreSep && isCurrSep {
+			if isPreSep && isCurrSep && !start {
 				continue
 			}
 			if (!isPreSep && isCurrSep && groupFlag == preGroupFlag) ||
@@ -366,8 +364,10 @@ func extractTableStruct(sql string) (*TableStruct, error) {
 	}
 
 	var (
-		elementTypes  []Element
-		elementValues []string
+		elementTypes    []Element
+		elementValues   []string
+		preElementValue string
+		preFlag         GroupFlag
 	)
 	for {
 		flag, elementStr := findNextElementFunc()
@@ -375,23 +375,28 @@ func extractTableStruct(sql string) (*TableStruct, error) {
 			break
 		}
 		if flag == GroupFlagBackQuote {
+			if (preFlag == GroupFlagBackQuote && len(elementTypes) > 1) || strings.ToLower(preElementValue) == "key" {
+				break
+			}
 			elementValues = append(elementValues, elementStr)
 			if len(elementTypes) == 0 {
 				elementTypes = append(elementTypes, ElementTable)
 			} else {
-				_, nextElementStr := findNextElementFunc()
 				elementTypes = append(elementTypes, ElementField)
-				elementTypes = append(elementTypes, ElementFieldType)
-				elementValues = append(elementValues, nextElementStr)
 			}
-
+		} else {
+			if preFlag == GroupFlagBackQuote {
+				elementTypes = append(elementTypes, ElementFieldType)
+				elementValues = append(elementValues, elementStr)
+			}
+			if strings.ToLower(preElementValue) == "comment" {
+				elementTypes = append(elementTypes, ElementComment)
+				elementValues = append(elementValues, elementStr)
+			}
 		}
-		if strings.ToLower(elementStr) == "comment" {
-			_, nextElementStr := findNextElementFunc()
-			elementTypes = append(elementTypes, ElementComment)
-			elementValues = append(elementValues, nextElementStr)
 
-		}
+		preElementValue = elementStr
+		preFlag = flag
 	}
 
 	var field *FieldInfo
@@ -402,7 +407,7 @@ func extractTableStruct(sql string) (*TableStruct, error) {
 		case ElementTable:
 			table.TableName = value
 		case ElementField:
-			if field != nil {
+			if field != nil && field.FieldType != "" && field.FieldName != "" {
 				table.Fields = append(table.Fields, field)
 			}
 			field = &FieldInfo{
@@ -414,7 +419,9 @@ func extractTableStruct(sql string) (*TableStruct, error) {
 			field.FieldComment = value
 		}
 	}
-	table.Fields = append(table.Fields, field)
+	if field != nil && field.FieldType != "" && field.FieldName != "" {
+		table.Fields = append(table.Fields, field)
+	}
 	return table, nil
 }
 
